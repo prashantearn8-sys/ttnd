@@ -1,0 +1,62 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile and attendance settings",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Owner user ID" },
+        "displayName": { "type": "string", "description": "Display name" },
+        "email": { "type": "string", "description": "User email address" },
+        "section": { "type": "string", "description": "Academic section (e.g. B9)" },
+        "semester": { "type": "string", "description": "Current semester" },
+        "targetPercentage": { "type": "number", "description": "Target attendance threshold" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Profile creation timestamp" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Last update timestamp" }
+      },
+      "required": ["userId", "email", "section"]
+    },
+    "AttendanceRecord": {
+      "title": "AttendanceRecord",
+      "description": "Academic subjects attendance quotas and schedule",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Owner user ID" },
+        "section": { "type": "string", "description": "Section code" },
+        "weekLabel": { "type": "string", "description": "Schedule/week label" },
+        "targetPercentage": { "type": "number", "description": "Target threshold" },
+        "subjects": { "type": "array", "description": "Array of subject attendance stats" },
+        "schedule": { "type": "array", "description": "Array of class period sessions" },
+        "lastUploadedDate": { "type": "string", "description": "Last date of schedule upload" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Last saved timestamp" }
+      },
+      "required": ["userId", "section", "subjects", "schedule"]
+    },
+    "CalendarSyncState": {
+      "title": "CalendarSyncState",
+      "description": "Google Calendar synchronization state and event identifiers",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Owner user ID" },
+        "lastSyncedAt": { "type": "string", "format": "date-time", "description": "Sync timestamp" },
+        "syncedEventsCount": { "type": "number", "description": "Number of synced periods" },
+        "calendarId": { "type": "string", "description": "Target Google Calendar identifier" }
+      },
+      "required": ["userId", "lastSyncedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "User profile document"
+    },
+    "/users/{userId}/data/attendance": {
+      "schema": { "$ref": "#/entities/AttendanceRecord" },
+      "description": "User attendance subjects and schedule storage"
+    },
+    "/users/{userId}/data/calendarSync": {
+      "schema": { "$ref": "#/entities/CalendarSyncState" },
+      "description": "Google Calendar synchronization records"
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "Attendance Tracker",
+  "description": "Student attendance tracker with Google Calendar timetable synchronization, Firebase Firestore cloud persistence, subject quotas, daily class schedules, and timetable image import.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
