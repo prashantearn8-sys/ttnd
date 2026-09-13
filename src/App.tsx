@@ -15,6 +15,8 @@ import { BottomNavBar, NavTab } from './components/BottomNavBar';
 import { CalendarSyncModal } from './components/CalendarSyncModal';
 import { UserProfile, AppAttendanceState, AttendanceStatus, SubjectAttendance, DayClassSession } from './types/attendance';
 import { INITIAL_USER, INITIAL_ATTENDANCE_STATE } from './data/initialData';
+import { fetchSectionSchedule } from './services/scheduleService';
+import { parseIsoDate, DAY_NAMES } from './utils/calendarUtils';
 import {
   testConnection,
   saveAttendanceToFirestore,
@@ -34,6 +36,7 @@ export default function App() {
   const [isDataLoaded, setIsDataLoaded] = useState(false);
   const [isCalendarModalOpen, setIsCalendarModalOpen] = useState(false);
   const [isCloudSynced, setIsCloudSynced] = useState(true);
+  const [isFetchingSchedule, setIsFetchingSchedule] = useState(false);
 
   // Restore saved session and attendance data from localStorage and Firestore
   useEffect(() => {
@@ -217,16 +220,79 @@ export default function App() {
     });
   };
 
+  // Direct schedule fetcher from API / local timetable
+  const handleFetchSchedule = async (sectionToFetch?: string, targetDay?: string) => {
+    const sec = (sectionToFetch || attendanceData.currentSection || 'B9').trim().toUpperCase();
+    setIsFetchingSchedule(true);
+    try {
+      const data = await fetchSectionSchedule(sec, targetDay, true);
+      if (data && data.schedule && data.schedule.length > 0) {
+        saveAttendanceData((prev) => {
+          const incomingDays = new Set(data.schedule.map((s) => s.day.toLowerCase()));
+          let mergedSchedule: DayClassSession[];
+          if (incomingDays.size > 1) {
+            mergedSchedule = data.schedule;
+          } else {
+            const remaining = prev.schedule.filter((s) => !incomingDays.has(s.day.toLowerCase()));
+            mergedSchedule = [...remaining, ...data.schedule];
+          }
+
+          return {
+            ...prev,
+            currentSection: sec,
+            weekLabel: data.weekLabel,
+            isUsingLastWeekFallback: false,
+            selectedCalendarDate: data.isoDate || prev.selectedCalendarDate || '2026-09-13',
+            extractedDateInfo: {
+              date: data.date,
+              month: data.month,
+              year: data.year,
+              isoDate: data.isoDate,
+              extractedDateText: data.extractedDateText,
+            },
+            subjects: data.subjects && data.subjects.length > 0 ? data.subjects : prev.subjects,
+            schedule: mergedSchedule,
+          };
+        });
+
+        if (targetDay) {
+          setActiveDay(targetDay);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch schedule:', err);
+    } finally {
+      setIsFetchingSchedule(false);
+    }
+  };
+
   // Merge newly parsed AI data from uploaded 1-day schedule
   const handleApplyParsedData = (data: {
     section: string;
     weekLabel: string;
     day?: string;
+    date?: number;
+    month?: string;
+    year?: number;
+    isoDate?: string;
+    extractedDateText?: string;
     subjects: SubjectAttendance[];
     schedule: DayClassSession[];
     isAiParsed: boolean;
   }) => {
-    const uploadDay = data.day || data.schedule?.[0]?.day || 'Friday';
+    let uploadDay = data.day || data.schedule?.[0]?.day || 'Friday';
+    const targetIso = data.isoDate;
+
+    if (targetIso) {
+      const dObj = parseIsoDate(targetIso);
+      if (!isNaN(dObj.getTime())) {
+        const dayFromDate = DAY_NAMES[dObj.getDay()];
+        if (dayFromDate) {
+          uploadDay = dayFromDate;
+        }
+      }
+    }
+
     setActiveDay(uploadDay);
 
     saveAttendanceData((prev) => {
@@ -256,13 +322,18 @@ export default function App() {
         }
       });
 
-      // 1-Day Schedule: Replace classes for this specific day with the newly extracted day classes
+      // Schedule merging: full weekly replace if multi-day, or day-specific replace
       let mergedSchedule: DayClassSession[];
       if (data.schedule && data.schedule.length > 0) {
-        const otherDaysSchedule = prev.schedule.filter(
-          (s) => s.day.toLowerCase() !== uploadDay.toLowerCase()
-        );
-        mergedSchedule = [...otherDaysSchedule, ...data.schedule];
+        const incomingDays = new Set(data.schedule.map((s) => s.day.toLowerCase()));
+        if (incomingDays.size > 1) {
+          mergedSchedule = data.schedule;
+        } else {
+          const otherDaysSchedule = prev.schedule.filter(
+            (s) => !incomingDays.has(s.day.toLowerCase())
+          );
+          mergedSchedule = [...otherDaysSchedule, ...data.schedule];
+        }
       } else {
         mergedSchedule = prev.schedule;
       }
@@ -273,6 +344,14 @@ export default function App() {
         weekLabel: data.weekLabel,
         isUsingLastWeekFallback: false,
         lastUploadedDate: new Date().toISOString().split('T')[0],
+        selectedCalendarDate: targetIso || prev.selectedCalendarDate || '2026-09-13',
+        extractedDateInfo: {
+          date: data.date,
+          month: data.month,
+          year: data.year,
+          isoDate: data.isoDate,
+          extractedDateText: data.extractedDateText,
+        },
         subjects: mergedSubjects,
         schedule: mergedSchedule,
       };
@@ -334,7 +413,10 @@ export default function App() {
               targetPercentage={attendanceData.targetPercentage}
               isUsingLastWeekFallback={attendanceData.isUsingLastWeekFallback}
               activeDay={activeDay}
+              currentSection={attendanceData.currentSection}
               onNavigateToTab={(tab) => setCurrentTab(tab)}
+              onFetchSchedule={handleFetchSchedule}
+              isFetchingSchedule={isFetchingSchedule}
             />
           )}
 
@@ -343,9 +425,22 @@ export default function App() {
               schedule={attendanceData.schedule}
               subjects={attendanceData.subjects}
               activeDay={activeDay}
+              currentSection={attendanceData.currentSection}
               onSelectDay={(day) => setActiveDay(day)}
               onUpdateSessionStatus={handleUpdateSessionStatus}
               onOpenCalendarSync={() => setIsCalendarModalOpen(true)}
+              onFetchSchedule={handleFetchSchedule}
+              isFetchingSchedule={isFetchingSchedule}
+              selectedCalendarDate={attendanceData.selectedCalendarDate || '2026-09-13'}
+              extractedDateInfo={attendanceData.extractedDateInfo}
+              weeklyOffPattern={attendanceData.weeklyOffPattern || 'sunday'}
+              onSelectCalendarDate={(dateStr, dayName) => {
+                setActiveDay(dayName);
+                saveAttendanceData((prev) => ({
+                  ...prev,
+                  selectedCalendarDate: dateStr,
+                }));
+              }}
             />
           )}
 
@@ -365,6 +460,10 @@ export default function App() {
               targetPercentage={attendanceData.targetPercentage}
               onUpdateTargetPercentage={(target) =>
                 saveAttendanceData((prev) => ({ ...prev, targetPercentage: target }))
+              }
+              weeklyOffPattern={attendanceData.weeklyOffPattern || 'sunday'}
+              onUpdateWeeklyOffPattern={(pattern) =>
+                saveAttendanceData((prev) => ({ ...prev, weeklyOffPattern: pattern }))
               }
               onResetData={handleResetData}
               onLogout={handleLogout}

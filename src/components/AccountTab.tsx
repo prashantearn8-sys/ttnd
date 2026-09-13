@@ -17,15 +17,20 @@ import {
   Cloud,
   Database,
   ExternalLink,
+  Coffee,
+  CheckCircle2,
+  Circle,
 } from 'lucide-react';
 import { motion } from 'motion/react';
-import { UserProfile, SubjectAttendance } from '../types/attendance';
+import { UserProfile, SubjectAttendance, WeeklyOffPattern } from '../types/attendance';
 
 interface AccountTabProps {
   user: UserProfile;
   subjects: SubjectAttendance[];
   targetPercentage: number;
   onUpdateTargetPercentage: (target: number) => void;
+  weeklyOffPattern?: WeeklyOffPattern;
+  onUpdateWeeklyOffPattern?: (pattern: WeeklyOffPattern) => void;
   onResetData: () => void;
   onLogout: () => void;
   onOpenCalendarSync?: () => void;
@@ -37,6 +42,8 @@ export const AccountTab: React.FC<AccountTabProps> = ({
   subjects,
   targetPercentage,
   onUpdateTargetPercentage,
+  weeklyOffPattern = 'sunday',
+  onUpdateWeeklyOffPattern,
   onResetData,
   onLogout,
   onOpenCalendarSync,
@@ -240,6 +247,106 @@ export const AccountTab: React.FC<AccountTabProps> = ({
             </button>
           ))}
         </div>
+      </div>
+
+      {/* COLLEGE WEEKLY OFF DAYS SECTION */}
+      <div id="settings-day-off-section" className="bg-white rounded-3xl p-4.5 shadow-xs border border-slate-150/80 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center">
+              <Coffee className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="text-xs font-bold text-slate-900">College Weekly Day Off</h3>
+              <p className="text-[10px] text-slate-400 font-medium">Select off days in your college every week</p>
+            </div>
+          </div>
+          <span className="text-[10px] font-mono font-bold text-amber-800 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
+            {weeklyOffPattern === 'saturday_sunday' ? 'Sat & Sun Off' : 'Sunday Off'}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 gap-2 pt-0.5">
+          {/* Option 1: Sunday */}
+          <button
+            id="day-off-option-sunday"
+            type="button"
+            onClick={() => onUpdateWeeklyOffPattern?.('sunday')}
+            className={`w-full p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex items-center justify-between ${
+              weeklyOffPattern === 'sunday'
+                ? 'bg-indigo-50/60 border-indigo-600 ring-1 ring-indigo-500/20 shadow-xs'
+                : 'bg-slate-50/60 hover:bg-slate-100/70 border-slate-200/90 text-slate-700'
+            }`}
+          >
+            <div className="flex items-start gap-3 min-w-0">
+              <div className="mt-0.5 shrink-0">
+                {weeklyOffPattern === 'sunday' ? (
+                  <CheckCircle2 className="w-4.5 h-4.5 text-indigo-600" />
+                ) : (
+                  <Circle className="w-4.5 h-4.5 text-slate-300" />
+                )}
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-slate-900">1. Sunday</span>
+                  <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.2 rounded-full bg-slate-200/60 text-slate-700">
+                    6-Day Week
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">
+                  Mon to Sat working • Only Sunday is college off
+                </p>
+              </div>
+            </div>
+            {weeklyOffPattern === 'sunday' && (
+              <span className="text-[10px] font-bold text-indigo-600 bg-indigo-100/70 px-2 py-0.5 rounded-full shrink-0">
+                Active
+              </span>
+            )}
+          </button>
+
+          {/* Option 2: Saturday & Sunday */}
+          <button
+            id="day-off-option-saturday-sunday"
+            type="button"
+            onClick={() => onUpdateWeeklyOffPattern?.('saturday_sunday')}
+            className={`w-full p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex items-center justify-between ${
+              weeklyOffPattern === 'saturday_sunday'
+                ? 'bg-indigo-50/60 border-indigo-600 ring-1 ring-indigo-500/20 shadow-xs'
+                : 'bg-slate-50/60 hover:bg-slate-100/70 border-slate-200/90 text-slate-700'
+            }`}
+          >
+            <div className="flex items-start gap-3 min-w-0">
+              <div className="mt-0.5 shrink-0">
+                {weeklyOffPattern === 'saturday_sunday' ? (
+                  <CheckCircle2 className="w-4.5 h-4.5 text-indigo-600" />
+                ) : (
+                  <Circle className="w-4.5 h-4.5 text-slate-300" />
+                )}
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-slate-900">2. Saturday &amp; Sunday</span>
+                  <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.2 rounded-full bg-indigo-100 text-indigo-700">
+                    5-Day Week
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">
+                  Mon to Fri working • Both Saturday &amp; Sunday are college off
+                </p>
+              </div>
+            </div>
+            {weeklyOffPattern === 'saturday_sunday' && (
+              <span className="text-[10px] font-bold text-indigo-600 bg-indigo-100/70 px-2 py-0.5 rounded-full shrink-0">
+                Active
+              </span>
+            )}
+          </button>
+        </div>
+
+        <p className="text-[10px] text-slate-400 leading-normal pt-0.5">
+          Weekly off days are flagged in red on your calendar and timetable strip with an &quot;Off&quot; badge and holiday notice.
+        </p>
       </div>
 
       {/* SYSTEM CONTROLS & RESET */}

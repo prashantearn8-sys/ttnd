@@ -1,13 +1,52 @@
 import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
-import { parseAttendanceImageServer } from './src/server/geminiService';
+import { parseAttendanceImageServer, getSectionSchedule } from './src/server/geminiService';
 
 async function startServer() {
   const app = express();
   const PORT = 3000;
 
   app.use(express.json({ limit: '25mb' }));
+
+  // Direct schedule fetch endpoint by section and day
+  app.post('/api/fetch-schedule', async (req, res) => {
+    try {
+      const { section, day, fullWeek = true } = req.body;
+      const targetSection = (section || 'B9').toString().trim().toUpperCase();
+      const result = getSectionSchedule(targetSection, day, fullWeek !== false);
+      return res.json(result);
+    } catch (error: any) {
+      console.error('Server error in /api/fetch-schedule:', error);
+      return res.status(500).json({ error: error?.message || 'Failed to fetch schedule' });
+    }
+  });
+
+  app.get('/api/schedule/:section', async (req, res) => {
+    try {
+      const targetSection = (req.params.section || 'B9').toString().trim().toUpperCase();
+      const day = typeof req.query.day === 'string' ? req.query.day : undefined;
+      const fullWeek = req.query.fullWeek !== 'false';
+      const result = getSectionSchedule(targetSection, day, fullWeek);
+      return res.json(result);
+    } catch (error: any) {
+      console.error('Server error in /api/schedule/:section:', error);
+      return res.status(500).json({ error: error?.message || 'Failed to fetch schedule' });
+    }
+  });
+
+  app.get('/api/schedule', async (req, res) => {
+    try {
+      const targetSection = (req.query.section || 'B9').toString().trim().toUpperCase();
+      const day = typeof req.query.day === 'string' ? req.query.day : undefined;
+      const fullWeek = req.query.fullWeek !== 'false';
+      const result = getSectionSchedule(targetSection, day, fullWeek);
+      return res.json(result);
+    } catch (error: any) {
+      console.error('Server error in /api/schedule:', error);
+      return res.status(500).json({ error: error?.message || 'Failed to fetch schedule' });
+    }
+  });
 
   // Server-side API endpoint for attendance image parsing via Gemini
   app.post('/api/parse-attendance', async (req, res) => {

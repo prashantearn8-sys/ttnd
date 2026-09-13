@@ -14,6 +14,7 @@ export const INITIAL_ATTENDANCE_STATE: AppAttendanceState = {
   currentSection: 'CSE-A',
   isUsingLastWeekFallback: true, // Show fallback badge initially until user uploads
   lastUploadedDate: '2026-09-05',
+  weeklyOffPattern: 'sunday',
   weekLabel: 'Week of Sep 8 - Sep 14',
   targetPercentage: 75,
   subjects: [

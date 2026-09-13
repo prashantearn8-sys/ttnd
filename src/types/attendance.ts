@@ -44,10 +44,23 @@ export interface AttendanceHistorySession {
   time: string;
 }
 
+export interface ExtractedScheduleDate {
+  date?: number;
+  month?: string;
+  year?: number;
+  isoDate?: string;
+  extractedDateText?: string;
+}
+
+export type WeeklyOffPattern = 'sunday' | 'saturday_sunday';
+
 export interface AppAttendanceState {
   currentSection: string;
   isUsingLastWeekFallback: boolean;
   lastUploadedDate: string | null;
+  selectedCalendarDate?: string; // YYYY-MM-DD
+  extractedDateInfo?: ExtractedScheduleDate | null;
+  weeklyOffPattern?: WeeklyOffPattern; // 'sunday' | 'saturday_sunday'
   weekLabel: string;
   targetPercentage: number;
   subjects: SubjectAttendance[];

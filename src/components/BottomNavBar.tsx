@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, CalendarCheck, UploadCloud, User } from 'lucide-react';
+import { LayoutDashboard, CalendarCheck, UploadCloud, Settings } from 'lucide-react';
 import { motion } from 'motion/react';
 
 export type NavTab = 'home' | 'day' | 'upload' | 'account';
@@ -34,8 +34,8 @@ export const BottomNavBar: React.FC<BottomNavBarProps> = ({
     },
     {
       id: 'account' as NavTab,
-      label: 'Account',
-      icon: User,
+      label: 'Settings',
+      icon: Settings,
     },
   ];
 

@@ -8,6 +8,7 @@ import {
   ChevronRight,
   Target,
   X,
+  RefreshCw,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { SubjectAttendance, DayClassSession, UserProfile } from '../types/attendance';
@@ -19,8 +20,11 @@ interface HomeTabProps {
   targetPercentage?: number;
   isUsingLastWeekFallback: boolean;
   activeDay?: string;
+  currentSection?: string;
   onNavigateToTab: (tab: 'home' | 'day' | 'upload' | 'account') => void;
   onUpdateSubject?: (updatedSubject: SubjectAttendance) => void;
+  onFetchSchedule?: (section?: string, day?: string) => Promise<void>;
+  isFetchingSchedule?: boolean;
 }
 
 export const HomeTab: React.FC<HomeTabProps> = ({
@@ -30,7 +34,10 @@ export const HomeTab: React.FC<HomeTabProps> = ({
   targetPercentage = 75,
   isUsingLastWeekFallback,
   activeDay = 'Friday',
+  currentSection,
   onNavigateToTab,
+  onFetchSchedule,
+  isFetchingSchedule,
 }) => {
   const [selectedSubject, setSelectedSubject] = useState<SubjectAttendance | null>(null);
 
@@ -178,20 +185,50 @@ export const HomeTab: React.FC<HomeTabProps> = ({
             <Calendar className="w-5 h-5" />
           </div>
           <div className="min-w-0">
-            <p className="text-[11px] font-medium text-indigo-900/70 truncate">{currentDayName}&apos;s Schedule</p>
+            <div className="flex items-center gap-1.5">
+              <p className="text-[11px] font-medium text-indigo-900/70 truncate">{currentDayName}&apos;s Schedule</p>
+              {onFetchSchedule && (
+                <button
+                  type="button"
+                  id="home-sync-icon-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onFetchSchedule(currentSection, currentDayName);
+                  }}
+                  disabled={isFetchingSchedule}
+                  className="text-slate-400 hover:text-indigo-600 p-0.5 rounded cursor-pointer transition-colors"
+                  title="Reload or sync schedule"
+                >
+                  <RefreshCw className={`w-3 h-3 ${isFetchingSchedule ? 'animate-spin text-indigo-600' : ''}`} />
+                </button>
+              )}
+            </div>
             <p className="text-sm font-bold text-slate-900 truncate">
               {todayClasses.length} {todayClasses.length === 1 ? 'Class' : 'Classes'} Scheduled
             </p>
           </div>
         </div>
-        <button
-          id="home-view-day-btn"
-          onClick={() => onNavigateToTab('day')}
-          className="px-3.5 py-1.5 rounded-full bg-slate-900 text-white font-semibold text-xs shadow-xs hover:bg-slate-800 active:scale-95 transition-all flex items-center gap-1 shrink-0 cursor-pointer"
-        >
-          <span>View Day</span>
-          <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          {todayClasses.length === 0 && onFetchSchedule && (
+            <button
+              id="home-fetch-schedule-btn"
+              onClick={() => onFetchSchedule(currentSection, currentDayName)}
+              disabled={isFetchingSchedule}
+              className="px-3 py-1.5 rounded-full bg-indigo-600 text-white font-semibold text-xs shadow-xs hover:bg-indigo-700 active:scale-95 transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3 h-3 ${isFetchingSchedule ? 'animate-spin' : ''}`} />
+              <span>Fetch</span>
+            </button>
+          )}
+          <button
+            id="home-view-day-btn"
+            onClick={() => onNavigateToTab('day')}
+            className="px-3.5 py-1.5 rounded-full bg-slate-900 text-white font-semibold text-xs shadow-xs hover:bg-slate-800 active:scale-95 transition-all flex items-center gap-1 cursor-pointer"
+          >
+            <span>View Day</span>
+            <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+          </button>
+        </div>
       </div>
 
       {/* SUBJECT PROGRESS LIST */}

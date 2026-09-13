@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Calendar,
   Clock,
@@ -8,9 +8,32 @@ import {
   ChevronLeft,
   ChevronRight,
   Sparkles,
+  RefreshCw,
+  CalendarDays,
+  Coffee,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { DayClassSession, AttendanceStatus, SubjectAttendance } from '../types/attendance';
+import {
+  DayClassSession,
+  AttendanceStatus,
+  SubjectAttendance,
+  ExtractedScheduleDate,
+  WeeklyOffPattern,
+} from '../types/attendance';
+import {
+  DayName,
+  DAY_NAMES,
+  MONTH_NAMES,
+  MONTH_SHORT_NAMES,
+  parseIsoDate,
+  formatIsoDate,
+  getMondayOfWeek,
+  getWeekDays,
+  isWeeklyOffDay,
+} from '../utils/calendarUtils';
+import { CalendarMonthPickerModal } from './CalendarMonthPickerModal';
+
+export { type DayName };
 
 interface DayTabProps {
   schedule: DayClassSession[];
@@ -19,18 +42,14 @@ interface DayTabProps {
   activeDay?: string;
   onSelectDay?: (day: DayName) => void;
   onOpenCalendarSync?: () => void;
+  currentSection?: string;
+  onFetchSchedule?: (section?: string, day?: string) => Promise<void>;
+  isFetchingSchedule?: boolean;
+  selectedCalendarDate?: string;
+  onSelectCalendarDate?: (isoDate: string, dayName: DayName) => void;
+  extractedDateInfo?: ExtractedScheduleDate | null;
+  weeklyOffPattern?: WeeklyOffPattern;
 }
-
-export type DayName = 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday';
-
-const DAYS: { name: DayName; short: string; dateNum: number }[] = [
-  { name: 'Monday', short: 'Mon', dateNum: 7 },
-  { name: 'Tuesday', short: 'Tue', dateNum: 8 },
-  { name: 'Wednesday', short: 'Wed', dateNum: 9 },
-  { name: 'Thursday', short: 'Thu', dateNum: 10 },
-  { name: 'Friday', short: 'Fri', dateNum: 11 },
-  { name: 'Saturday', short: 'Sat', dateNum: 12 },
-];
 
 export const DayTab: React.FC<DayTabProps> = ({
   schedule,
@@ -39,28 +58,106 @@ export const DayTab: React.FC<DayTabProps> = ({
   activeDay,
   onSelectDay,
   onOpenCalendarSync,
+  currentSection,
+  onFetchSchedule,
+  isFetchingSchedule,
+  selectedCalendarDate,
+  onSelectCalendarDate,
+  extractedDateInfo,
+  weeklyOffPattern = 'sunday',
 }) => {
-  const [internalDay, setInternalDay] = useState<DayName>(
-    (DAYS.some((d) => d.name.toLowerCase() === activeDay?.toLowerCase())
-      ? (DAYS.find((d) => d.name.toLowerCase() === activeDay?.toLowerCase())?.name as DayName)
-      : 'Friday')
-  );
+  const TODAY_ISO = '2026-09-13';
 
-  const selectedDay = (
-    DAYS.some((d) => d.name.toLowerCase() === activeDay?.toLowerCase())
-      ? (DAYS.find((d) => d.name.toLowerCase() === activeDay?.toLowerCase())?.name as DayName)
-      : internalDay
-  );
+  // Selected calendar date (ISO string YYYY-MM-DD)
+  const [selectedIsoDate, setSelectedIsoDate] = useState<string>(() => {
+    return selectedCalendarDate || extractedDateInfo?.isoDate || TODAY_ISO;
+  });
+
+  // Base Monday for the week view
+  const [weekBaseDate, setWeekBaseDate] = useState<Date>(() => {
+    const initDate = parseIsoDate(selectedCalendarDate || extractedDateInfo?.isoDate || TODAY_ISO);
+    return getMondayOfWeek(initDate);
+  });
+
+  // Full Month Calendar Picker Modal state
+  const [isMonthPickerOpen, setIsMonthPickerOpen] = useState(false);
+
+  // Sync state when props change
+  useEffect(() => {
+    if (selectedCalendarDate && selectedCalendarDate !== selectedIsoDate) {
+      setSelectedIsoDate(selectedCalendarDate);
+      const parsed = parseIsoDate(selectedCalendarDate);
+      setWeekBaseDate(getMondayOfWeek(parsed));
+    }
+  }, [selectedCalendarDate]);
+
+  // Selected date object
+  const selectedDateObj = parseIsoDate(selectedIsoDate);
+
+  // Days in current week (Monday through Sunday)
+  const weekDays = getWeekDays(weekBaseDate, selectedDateObj, parseIsoDate(TODAY_ISO));
+
+  // Week header label (e.g. "September 2026" or "Sep - Oct 2026")
+  const startMonthName = MONTH_SHORT_NAMES[weekDays[0].monthIndex];
+  const endMonthName = MONTH_SHORT_NAMES[weekDays[weekDays.length - 1].monthIndex];
+  const weekYear = weekDays[0].year;
+  const weekHeaderTitle =
+    startMonthName === endMonthName
+      ? `${MONTH_NAMES[weekDays[0].monthIndex]} ${weekYear}`
+      : `${startMonthName} - ${endMonthName} ${weekYear}`;
+
+  // Current day of week for timetable filtering
+  const currentDayName = weekDays.find((d) => d.isoDate === selectedIsoDate)?.dayName || (activeDay as DayName) || 'Friday';
+
+  const [internalDay, setInternalDay] = useState<DayName>(currentDayName);
+
+  const selectedDay: DayName = activeDay && DAY_NAMES.includes(activeDay as DayName)
+    ? (activeDay as DayName)
+    : internalDay;
 
   const handleSelectDay = (day: DayName) => {
     setInternalDay(day);
     if (onSelectDay) onSelectDay(day);
   };
 
-  const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
+  const handleSelectDate = (isoDate: string, dayName: DayName) => {
+    setSelectedIsoDate(isoDate);
+    const dateObj = parseIsoDate(isoDate);
+    setWeekBaseDate(getMondayOfWeek(dateObj));
+    handleSelectDay(dayName);
+    if (onSelectCalendarDate) {
+      onSelectCalendarDate(isoDate, dayName);
+    }
+  };
 
-  // Filter classes for the selected day
-  const dayClasses = schedule.filter((s) => s.day === selectedDay);
+  // Week shift navigation handlers (-7 days and +7 days)
+  const handlePrevWeek = () => {
+    setWeekBaseDate((prev) => {
+      const nextMonday = new Date(prev.getFullYear(), prev.getMonth(), prev.getDate() - 7);
+      return nextMonday;
+    });
+  };
+
+  const handleNextWeek = () => {
+    setWeekBaseDate((prev) => {
+      const nextMonday = new Date(prev.getFullYear(), prev.getMonth(), prev.getDate() + 7);
+      return nextMonday;
+    });
+  };
+
+  const handleJumpToToday = () => {
+    const todayObj = parseIsoDate(TODAY_ISO);
+    setWeekBaseDate(getMondayOfWeek(todayObj));
+    setSelectedIsoDate(TODAY_ISO);
+    const dayName = DAY_NAMES[todayObj.getDay()];
+    handleSelectDay(dayName);
+    if (onSelectCalendarDate) {
+      onSelectCalendarDate(TODAY_ISO, dayName);
+    }
+  };
+
+  // Filter classes for the selected day of week
+  const dayClasses = schedule.filter((s) => s.day.toLowerCase() === selectedDay.toLowerCase());
 
   // Class statistics for the selected day
   const totalClassesToday = dayClasses.length;
@@ -107,9 +204,14 @@ export const DayTab: React.FC<DayTabProps> = ({
       >
         <div className="flex items-start justify-between">
           <div>
-            <span className="text-[10px] font-round font-bold uppercase tracking-wider text-indigo-200 bg-white/10 backdrop-blur-md px-3 py-1 rounded-full border border-white/10 shadow-2xs">
-              Day Schedule
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-round font-bold uppercase tracking-wider text-indigo-200 bg-white/10 backdrop-blur-md px-3 py-1 rounded-full border border-white/10 shadow-2xs">
+                Day Schedule
+              </span>
+              <span className="text-[10px] font-mono text-indigo-200/90 bg-white/5 px-2.5 py-0.5 rounded-full border border-white/5">
+                {selectedIsoDate}
+              </span>
+            </div>
             <h1 className="text-xl font-round font-bold tracking-tight mt-2 text-white">
               {totalClassesToday} {totalClassesToday === 1 ? 'Class' : 'Classes'} Scheduled
             </h1>
@@ -118,9 +220,15 @@ export const DayTab: React.FC<DayTabProps> = ({
             </p>
           </div>
 
-          <div className="w-11 h-11 rounded-2xl bg-white/10 backdrop-blur-md flex items-center justify-center flex-shrink-0 shadow-2xs">
-            <Calendar className="w-5 h-5 text-indigo-200" />
-          </div>
+          {/* Interactive calendar icon button in hero card */}
+          <button
+            id="open-hero-calendar-btn"
+            onClick={() => setIsMonthPickerOpen(true)}
+            className="w-11 h-11 rounded-2xl bg-white/10 hover:bg-white/20 active:scale-95 backdrop-blur-md flex items-center justify-center flex-shrink-0 shadow-2xs transition-all cursor-pointer group"
+            title="Open Interactive Calendar Picker"
+          >
+            <Calendar className="w-5 h-5 text-indigo-200 group-hover:scale-110 transition-transform" />
+          </button>
         </div>
 
         {/* Quick status bar */}
@@ -140,35 +248,138 @@ export const DayTab: React.FC<DayTabProps> = ({
         </div>
       </motion.div>
 
-      {/* DAY SWITCHER PILLS (Mon - Sat) */}
-      <div className="bg-white rounded-2xl p-1.5 border border-slate-150/80 shadow-[0_2px_12px_rgba(15,23,42,0.03)] flex items-center justify-between gap-1 overflow-x-auto">
-        {DAYS.map((d) => {
-          const isSelected = selectedDay === d.name;
-          const count = schedule.filter((s) => s.day === d.name).length;
-
-          return (
+      {/* AI EXTRACTED SCHEDULE DATE BANNER (if timetable had date stamped) */}
+      {extractedDateInfo && (extractedDateInfo.extractedDateText || extractedDateInfo.isoDate) && (
+        <div className="bg-indigo-50/70 border border-indigo-100 rounded-2xl p-3 flex items-center justify-between gap-2 shadow-2xs">
+          <div className="flex items-center gap-2 min-w-0">
+            <Sparkles className="w-4 h-4 text-indigo-600 flex-shrink-0" />
+            <div className="min-w-0 truncate">
+              <span className="text-[10px] font-round text-slate-500 block">AI Detected Timetable Date:</span>
+              <span className="text-xs font-mono font-bold text-indigo-900 truncate block">
+                {extractedDateInfo.extractedDateText || extractedDateInfo.isoDate}
+              </span>
+            </div>
+          </div>
+          {extractedDateInfo.isoDate && extractedDateInfo.isoDate !== selectedIsoDate && (
             <button
-              key={d.name}
-              id={`day-selector-${d.short.toLowerCase()}`}
-              onClick={() => handleSelectDay(d.name)}
-              className={`flex-1 min-w-[48px] py-2 px-1 rounded-xl text-center transition-all cursor-pointer ${
-                isSelected
-                  ? 'bg-slate-900 text-white font-round font-bold shadow-xs'
-                  : 'text-slate-500 hover:bg-slate-50 font-round font-medium'
+              onClick={() => {
+                if (extractedDateInfo.isoDate) {
+                  const sObj = parseIsoDate(extractedDateInfo.isoDate);
+                  handleSelectDate(extractedDateInfo.isoDate, DAY_NAMES[sObj.getDay()]);
+                }
+              }}
+              className="py-1 px-3 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-round font-bold flex-shrink-0 transition-colors cursor-pointer"
+            >
+              View Date
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* INTERACTIVE CALENDAR WEEK NAVIGATION & DATE STRIP */}
+      <div className="bg-white rounded-3xl p-3.5 border border-slate-150/80 shadow-[0_2px_16px_rgba(15,23,42,0.03)] space-y-2.5">
+        {/* Week bar header: Month/Year navigation + Calendar modal trigger */}
+        <div className="flex items-center justify-between px-1">
+          <button
+            id="open-calendar-modal-header-btn"
+            onClick={() => setIsMonthPickerOpen(true)}
+            className="flex items-center gap-1.5 text-xs font-round font-bold text-slate-900 hover:text-indigo-600 transition-colors cursor-pointer group"
+            title="Click to open Month Calendar"
+          >
+            <CalendarDays className="w-4 h-4 text-indigo-600 group-hover:scale-110 transition-transform" />
+            <span>{weekHeaderTitle}</span>
+            <span className="text-[10px] font-round font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100">
+              Pick Date
+            </span>
+          </button>
+
+          {/* Previous week, Today, Next week buttons */}
+          <div className="flex items-center gap-1">
+            <button
+              id="prev-week-nav-btn"
+              onClick={handlePrevWeek}
+              className="w-7 h-7 rounded-xl hover:bg-slate-100 text-slate-600 flex items-center justify-center transition-colors cursor-pointer"
+              title="Previous Week (Dates before)"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+
+            <button
+              id="jump-today-nav-btn"
+              onClick={handleJumpToToday}
+              className={`px-2 py-1 rounded-lg text-[10px] font-round font-bold transition-all cursor-pointer ${
+                selectedIsoDate === TODAY_ISO
+                  ? 'bg-slate-900 text-white'
+                  : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
               }`}
             >
-              <p className="text-[10px] leading-tight uppercase font-bold">{d.short}</p>
-              <p className="text-xs font-bold mt-0.5">{d.dateNum}</p>
-              <span
-                className={`text-[9px] px-2 py-0.2 rounded-full mt-0.5 inline-block font-mono ${
-                  isSelected ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'
+              Today
+            </button>
+
+            <button
+              id="next-week-nav-btn"
+              onClick={handleNextWeek}
+              className="w-7 h-7 rounded-xl hover:bg-slate-100 text-slate-600 flex items-center justify-center transition-colors cursor-pointer"
+              title="Next Week (Dates after)"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        {/* DYNAMIC DATE STRIP (Monday through Sunday) */}
+        <div className="flex items-center justify-between gap-1 overflow-x-auto pb-0.5">
+          {weekDays.map((d) => {
+            const isSelected = d.isoDate === selectedIsoDate;
+            const count = schedule.filter((s) => s.day.toLowerCase() === d.dayName.toLowerCase()).length;
+            const isOffDay = isWeeklyOffDay(d.dayName, weeklyOffPattern);
+
+            return (
+              <button
+                key={d.isoDate}
+                id={`date-pill-${d.isoDate}`}
+                onClick={() => handleSelectDate(d.isoDate, d.dayName)}
+                className={`flex-1 min-w-[42px] py-2 px-1 rounded-2xl text-center transition-all cursor-pointer relative ${
+                  isSelected
+                    ? 'bg-slate-900 text-white font-round font-bold shadow-sm'
+                    : d.isToday
+                    ? 'bg-indigo-50/90 text-indigo-900 font-round font-bold border border-indigo-200/80 hover:bg-indigo-100/80'
+                    : 'text-slate-600 hover:bg-slate-50 font-round font-medium'
                 }`}
               >
-                {count}
-              </span>
-            </button>
-          );
-        })}
+                {/* Day abbreviation */}
+                <p
+                  className={`text-[9px] leading-tight uppercase font-bold ${
+                    isSelected ? 'text-slate-300' : isOffDay ? 'text-rose-500' : 'text-slate-400'
+                  }`}
+                >
+                  {d.shortDay}
+                </p>
+
+                {/* Day number (1 - 31) */}
+                <p className="text-xs font-bold mt-0.5 leading-tight">{d.dateNum}</p>
+
+                {/* Period Count or Day Off badge */}
+                <span
+                  className={`text-[8px] px-1.5 py-0.2 rounded-full mt-1 inline-block font-mono leading-tight ${
+                    isSelected
+                      ? 'bg-white/20 text-white font-bold'
+                      : isOffDay
+                      ? 'bg-rose-50 text-rose-600 font-semibold'
+                      : 'bg-slate-100 text-slate-500'
+                  }`}
+                >
+                  {isOffDay ? 'Off' : count}
+                </span>
+
+                {/* Today indicator dot */}
+                {d.isToday && !isSelected && (
+                  <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-indigo-600" />
+                )}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* GOOGLE CALENDAR QUICK SYNC ACTION */}
@@ -202,17 +413,65 @@ export const DayTab: React.FC<DayTabProps> = ({
           <h2 className="text-sm font-round font-bold text-slate-900 flex items-center gap-1.5">
             <Calendar className="w-4 h-4 text-indigo-600" />
             <span>{selectedDay}&apos;s Schedule</span>
+            <span className="text-[10px] font-mono text-slate-400">({selectedIsoDate})</span>
           </h2>
-          <span className="text-[11px] font-round text-slate-400">
-            Tap status to record
-          </span>
+          {onFetchSchedule && (
+            <button
+              id="day-tab-sync-schedule-btn"
+              onClick={() => onFetchSchedule(currentSection, selectedDay)}
+              disabled={isFetchingSchedule}
+              className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 px-2.5 py-1 rounded-lg hover:bg-indigo-50 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
+              title="Sync or reload timetable for this section"
+            >
+              <RefreshCw className={`w-3 h-3 ${isFetchingSchedule ? 'animate-spin' : ''}`} />
+              <span>{isFetchingSchedule ? 'Fetching...' : 'Sync Timetable'}</span>
+            </button>
+          )}
         </div>
 
         {dayClasses.length === 0 ? (
-          <div className="bg-white rounded-2xl p-8 text-center border border-slate-150/80 shadow-[0_2px_12px_rgba(15,23,42,0.03)]">
-            <Sparkles className="w-6 h-6 text-indigo-400 mx-auto mb-2" />
-            <p className="text-sm font-round font-bold text-slate-900">No classes scheduled for {selectedDay}</p>
-            <p className="text-xs font-round text-slate-400 mt-0.5">Free day for revision or self-study.</p>
+          <div className="bg-white rounded-2xl p-7 text-center border border-slate-150/80 shadow-[0_2px_12px_rgba(15,23,42,0.03)] space-y-3">
+            {isWeeklyOffDay(selectedDay, weeklyOffPattern) ? (
+              <>
+                <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto shadow-2xs">
+                  <Coffee className="w-6 h-6" />
+                </div>
+                <div>
+                  <p className="text-sm font-round font-bold text-slate-900">
+                    {selectedDay} - College Day Off (No Classes)
+                  </p>
+                  <p className="text-xs font-round text-slate-500 mt-1 max-w-xs mx-auto">
+                    {weeklyOffPattern === 'saturday_sunday'
+                      ? `Your college is set to Saturday & Sunday off. Enjoy your weekend holiday or catch up on study goals!`
+                      : `Your college is set to Sunday off. Enjoy your weekend holiday!`}
+                  </p>
+                </div>
+              </>
+            ) : (
+              <>
+                <Sparkles className="w-6 h-6 text-indigo-400 mx-auto" />
+                <div>
+                  <p className="text-sm font-round font-bold text-slate-900">
+                    No classes loaded for {selectedDay}
+                  </p>
+                  <p className="text-xs font-round text-slate-400 mt-0.5">
+                    Section {currentSection || 'B9'} timetable has not been loaded for {selectedDay}.
+                  </p>
+                </div>
+                {onFetchSchedule && (
+                  <button
+                    type="button"
+                    id="fetch-day-schedule-btn"
+                    disabled={isFetchingSchedule}
+                    onClick={() => onFetchSchedule(currentSection, selectedDay)}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-2xs transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isFetchingSchedule ? 'animate-spin' : ''}`} />
+                    <span>Fetch Schedule for Section {currentSection || 'B9'}</span>
+                  </button>
+                )}
+              </>
+            )}
           </div>
         ) : (
           dayClasses.map((item, index) => {
@@ -299,6 +558,18 @@ export const DayTab: React.FC<DayTabProps> = ({
           })
         )}
       </div>
+
+      {/* Full Month Calendar Picker Modal */}
+      <CalendarMonthPickerModal
+        isOpen={isMonthPickerOpen}
+        onClose={() => setIsMonthPickerOpen(false)}
+        selectedIsoDate={selectedIsoDate}
+        onSelectDate={handleSelectDate}
+        schedule={schedule}
+        extractedDateInfo={extractedDateInfo}
+        todayIsoDate={TODAY_ISO}
+        weeklyOffPattern={weeklyOffPattern}
+      />
     </div>
   );
 };
